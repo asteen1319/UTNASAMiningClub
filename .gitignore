@@ -1,2 +1,4 @@
 
 ControllerGUI/.vs/ControllerGUI/v15/.suo
+*.exe
+*.cache

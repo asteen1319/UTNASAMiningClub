@@ -15,40 +15,351 @@ namespace NasaRobot
 {
     public partial class Form1 : Form
     {
+        #region GLOBAL VARIABLES
+
         System.Net.Sockets.TcpClient sock = new TcpClient();
         bool addValue = true; //true if we're moving forward, false if we're going backwards
         int motorSpeed = 8;
         int actuatorSpeed = 8;
         Controller controller = new Controller(UserIndex.One);
         bool useController = false;
-
-
         DispatcherTimer timer = new DispatcherTimer();
+        bool controllingMotors = true;
+
+        List<string> MotorList = new List<string> { "DriveMotor" };
+        List<string> ActuatorList = new List<string> { "Excavator", "Dump" };
+
+        #endregion
 
         public Form1()
         {
             InitializeComponent();
-            if (controller.IsConnected)
-            {
-                var response = MessageBox.Show("Xbox Controller connected. Use that instead?", "", MessageBoxButtons.YesNo);
-                useController = response == DialogResult.Yes ? true : false;
-            }
+           
 
             //default comboboxes to first item in collection
             cmbMotorSelect.SelectedIndex = 0;
             cmbActuatorSelect.SelectedIndex = 0;
 
             //connectSocket();
+            Visible = true;
 
-            if (useController)
+            if (controller.IsConnected)
             {
-                pnlCompControl.Visible = false;
-                pnlXboxControl.Visible = true;
-                this.Visible = true;
-                controlWithXbox();
+                var response = MessageBox.Show("Xbox Controller connected. Use that instead?", "", MessageBoxButtons.YesNo);
+                useController = response == DialogResult.Yes ? true : false;
             }
+
+            //display the correct control scheme
+            changeControlScheme();
+            
         }
 
+    
+
+        #region DISPLAY UPDATES
+
+        /// <summary>
+        /// Changes which GUI elements are displayed
+        /// </summary>
+        void changeControlScheme()
+        {
+            
+            //show the correct display
+            if (useController)
+            {
+                pnlXboxControl.Visible = true;
+                pnlCompControl.Visible = false;
+            }
+            else
+            {
+                pnlXboxControl.Visible = false;
+                pnlCompControl.Visible = true;
+            }
+
+            //start/stop timer
+            if (timer.IsEnabled && !useController)
+            {
+                timer.Stop();
+            }
+            else if (!timer.IsEnabled && useController)
+            {
+                initiateTimer();
+            }
+
+            
+        }
+
+        /// <summary>
+        /// Updates display to show current speed setting
+        /// </summary>
+        private void updateSpeedText()
+        {
+            string value = "";
+            switch (motorSpeed)
+            {
+                case 8:
+                    value = "1/8th";
+                    break;
+                case 16:
+                    value = "1/4th";
+                    break;
+                case 24:
+                    value = "3/8th";
+                    break;
+                case 32:
+                    value = "Half";
+                    break;
+                case 40:
+                    value = "5/8th";
+                    break;
+                case 48:
+                    value = "3/4th";
+                    break;
+                case 56:
+                    value = "7/8th";
+                    break;
+                case 64:
+                    value = "Full";
+                    break;
+            }
+            lblSpeed.Text = value;
+        }
+
+        private void btnSwapControls_Click(object sender, EventArgs e)
+        {
+            useController = !useController;
+            changeControlScheme();
+        }
+
+        #endregion
+
+        #region XBOX CONTROLLER
+
+        /// <summary>
+        /// Sets up and starts a timer to tick every 100 milliseconds
+        /// </summary>
+        private void initiateTimer()
+        {
+            timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            timer.Tick += timer_Tick;
+            timer.Start();
+
+        }
+
+        /// <summary>
+        /// Event handler for the DispatcherTimer Tick event
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        void timer_Tick(object sender, EventArgs e)
+        {
+            UpdateController();
+        }
+
+        /// <summary>
+        /// Updates and handles current controller state
+        /// </summary>
+        public void UpdateController()
+        {
+            float LeftTrigger, RightTrigger;
+            if (!controller.IsConnected)
+            {
+                var response = MessageBox.Show("No controller detected! Connect a controller and click \"Retry\" or click \"Cancel\" if you no longer wish to use a controller.", "No Connection", MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
+                if (response == DialogResult.Cancel) //retry case will be handled by coming back to this method, so no need to explicitly handle it
+                {
+                    useController = false;
+                    changeControlScheme();
+                }
+
+                return;
+            }
+
+            var temp = "";
+
+            Gamepad gamepad = controller.GetState().Gamepad;
+            interpretInput(gamepad);
+
+            //LeftTrigger = gamepad.LeftTrigger;
+            //RightTrigger = gamepad.RightTrigger;
+        }
+
+        private Image getNextImage(string command)
+        {
+            Image image;
+            switch (command)
+            {
+                case "Forward":
+                    image = Properties.Resources.forward;
+                    break;
+                case "Left":
+                    image = Properties.Resources.left;
+                    break;
+                case "Right":
+                    image = Properties.Resources.right;
+                    break;
+                case "CW":
+                    image = Properties.Resources.clockwise;
+                    break;
+                case "CCW":
+                    image = Properties.Resources.counterclockwise;
+                    break;
+                case "Reverse":
+                    image = Properties.Resources.reverse;
+                    break;
+                default:
+                    image = Properties.Resources.stop;
+                    break;
+            }
+            return image;
+        }
+
+        /// <summary>
+        /// Reads state of controller sticks and buttons and handles input
+        /// </summary>
+        /// <param name="gamepad"></param>
+        private void interpretInput(Gamepad gamepad)
+        {
+            Point LeftThumb = new Point(0, 0);
+            Point RightThumb = new Point(0, 0);
+            int deadband = 2500;
+            
+            //get stick input
+            //convert thumbstick values to a range of 0-100, instead of -32000ish - 32000ish
+            //currently the right stick isn't used, but keep the code here anyways
+            LeftThumb.X = (int)((Math.Abs((float)gamepad.LeftThumbX) < deadband) ? 0 : (float)gamepad.LeftThumbX / short.MinValue * -100);
+            LeftThumb.Y = (int)((Math.Abs((float)gamepad.LeftThumbY) < deadband) ? 0 : (float)gamepad.LeftThumbY / short.MaxValue * 100);
+            RightThumb.X = (int)((Math.Abs((float)gamepad.RightThumbX) < deadband) ? 0 : (float)gamepad.RightThumbX / short.MaxValue * 100);
+            RightThumb.Y = (int)((Math.Abs((float)gamepad.RightThumbY) < deadband) ? 0 : (float)gamepad.RightThumbY / short.MaxValue * 100);
+
+            string temp = "";
+            string command = getDirection(LeftThumb);
+            Image nextImage = getNextImage(command);
+            lblDirection.Text = (addValue ? "" : "Back ") + command;
+
+            #region BUTTONS
+
+            if (gamepad.Buttons.HasFlag(GamepadButtonFlags.B) || gamepad.Buttons.HasFlag(GamepadButtonFlags.Back)) //Stop. check this first so Stop overrides all other commands
+            {
+                lblCurrentCommand.Text = "Stop";
+                lblCurrentDevice.Text = cmbMotorSelect.Text; //TODO: figure out how to let user select between motors and actuators w/ controller
+                pictureBox1.Image = Properties.Resources.stop;
+                //sendMessage(cmbMotorSelect.Text, "Stop", 0);
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.A)) //send command
+            {
+                temp = command;
+                lblCurrentCommand.Text = command;
+                lblCurrentDevice.Text = cmbMotorSelect.Text; //TODO: figure out how to let user select between motors and actuators w/ controller
+                pictureBox1.Image = nextImage;
+
+                //sendMessage(cmbMotorSelect.Text, command, motorSpeed);
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadUp))//increase speed setting
+            {
+                if (motorSpeed < 64)
+                {
+                    motorSpeed += 8;
+                }
+
+                updateSpeedText();
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadDown))//lower speed setting
+            {
+                if (motorSpeed > 8)
+                {
+                    motorSpeed -= 8;
+                }
+
+                updateSpeedText();
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadLeft))//control motors
+            {
+                controllingMotors = true;
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadRight))//control actuators
+            {
+                controllingMotors = false;
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.RightShoulder))//next item in list
+            {
+                MotorList.
+            }
+            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.LeftShoulder))//previous item in list
+            {
+
+            }
+          
+
+            #endregion
+
+            //debugging info
+            lblDisplay.Text = $"Left Stick X: {LeftThumb.X}, Left Stick Y: {LeftThumb.Y}, Right Stick X: {RightThumb.X}, Right Stick Y: {RightThumb.Y}, Buttons: {gamepad.Buttons.ToString()}, Move Direction: {temp}";
+
+        }
+
+        /// <summary>
+        /// Determines which movement command to give based on stick position
+        /// </summary>
+        /// <param name="point">Current position of the stick</param>
+        /// <returns>Direction command</returns>
+        private string getDirection(Point point)
+        {
+
+            //NOTE: reverse turns may have robot move in the wrong direction. We need to test this. If thats the case, just swap Left and Right in this cod      
+            string command = "";
+            if (point.Y > 0 && point.X < 30 && point.X > -30)
+            {
+                
+                command = "Forward";
+                addValue = true;
+            }
+            else if (point.Y < 30 && point.Y  > -30 && point.X < 0) //pivot turn left
+            {
+                command = "CCW";
+                addValue = true;
+            }
+            else if (point.Y >= 30 && point.X <= -30)//rounded turn to the left
+            {
+                command = "Left";
+                addValue = true;
+            }
+            else if (point.Y < 0 && point.X > -30 && point.X < 30)
+            {
+                command = "Reverse";
+                addValue = false;
+            }
+            else if (point.Y >= 30 && point.X >= 30)//rounded turn to the right
+            {
+                command = "Right";
+                addValue = true;
+            }
+            else if (point.Y > -30 && point.Y < 30 && point.X > 0)//pivot turn right
+            {
+                command = "CW";
+                addValue = true;
+            }
+            else if(point.X <= -30 && point.Y <= -30)//reverse rounded turn left
+            {
+                command = "Left";
+                addValue = false;
+            }
+            else if (point.X >= 30 && point.Y <= -30)//reverse rounded turn right
+            {
+                command = "Right";
+                addValue = false;
+            }
+            else
+            {
+                command = "Stop";
+            }
+
+            return command;
+        }
+
+        #endregion
+
+        #region SOCKETS
+        
         /// <summary>
         /// Establishes a socket connection with the wifi chip
         /// </summary>
@@ -58,97 +369,13 @@ namespace NasaRobot
             sock.Connect(board, 23);
 
         }
-        private void controlWithXbox()
-        {
-            timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            timer.Tick += timer_Tick;
-            timer.Start();
-          
-        }
 
-        void timer_Tick(object sender, EventArgs e)
-        {
-            UpdateController();
-        }
-
-        public void UpdateController()
-        {
-            Point LeftThumb = new Point(0, 0);
-            Point RightThumb = new Point(0, 0);
-            float LeftTrigger, RightTrigger;
-            int deadband = 2500;
-            if (!controller.IsConnected)
-            {
-                return;
-            }
-
-            Gamepad gamepad = controller.GetState().Gamepad;
-
-            LeftThumb.X = (int)((Math.Abs((float)gamepad.LeftThumbX) < deadband) ? 0 : (float)gamepad.LeftThumbX / short.MinValue * -100);
-            LeftThumb.Y = (int)((Math.Abs((float)gamepad.LeftThumbY) < deadband) ? 0 : (float)gamepad.LeftThumbY / short.MaxValue * 100);
-            RightThumb.Y = (int)((Math.Abs((float)gamepad.RightThumbX) < deadband) ? 0 : (float)gamepad.RightThumbX / short.MaxValue * 100);
-            RightThumb.X = (int)((Math.Abs((float)gamepad.RightThumbY) < deadband) ? 0 : (float)gamepad.RightThumbY / short.MaxValue * 100);
-            LeftTrigger = gamepad.LeftTrigger;
-            RightTrigger = gamepad.RightTrigger;
-            //State state = controller.GetState();
-
-            if (gamepad.Buttons.HasFlag(GamepadButtonFlags.A))
-            {
-                string command = getDirection(LeftThumb);
-                //sendMessage(cmbMotorSelect.Text, command, motorSpeed);
-            }
-            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.B))
-            {
-                //sendMessage(cmbMotorSelect.Text, "Stop", motorSpeed);
-            }
-            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadUp))
-            {
-                motorSpeed += 8;
-            }
-            else if (gamepad.Buttons.HasFlag(GamepadButtonFlags.DPadDown))
-            {
-                motorSpeed -= 8;
-            }
-
-            lblDisplay.Text = gamepad.ToString();
-
-        }
-
-        private string getDirection(Point point)
-        {
-            string command = "";
-            if (point.Y > 0 && point.X == 0)
-            {
-                command = "Forward";
-            }
-            else if (point.Y == 0 && point.X > 0)
-            {
-                command = "CCW";
-            }
-            else if (point.Y > 0 && point.X < 0)
-            {
-                command = "Left";
-            }
-            else if (point.Y < 0 && point.X == 0)
-            {
-                command = "Reverse";
-            }
-            else if (point.Y > 0 && point.X > 0)
-            {
-                command = "Right";
-            }
-            else if (point.Y == 0 && point.X < 0)
-            {
-                command = "CW";
-            }
-            else if (point.Y == 0 && point.X == 0)
-            {
-                command = "Stop";
-            }
-
-            return command;
-        }
-
+        /// <summary>
+        /// Sends a message via a socket connection
+        /// </summary>
+        /// <param name="deviceName">Device to control</param>
+        /// <param name="command">Command to be executed</param>
+        /// <param name="value">Speed value</param>
         private void sendMessage(string deviceName, string command, int value)
         {
             NetworkStream serverStream = sock.GetStream();
@@ -171,6 +398,7 @@ namespace NasaRobot
 
         }
 
+        #endregion
 
         #region MOTOR CONTROLS
 
@@ -333,42 +561,8 @@ namespace NasaRobot
                 sendMessage(cmbMotorSelect.Text, "Stop", 64);
             }
         }
+
+       
+
     }
-
-
-    //class XInputController
-    //{
-    //    Controller controller;
-    //    Gamepad gamepad;
-    //    public bool connected = false;
-    //    public int deadband = 2500;
-    //    public Point leftThumb, rightThumb = new Point(0, 0);
-    //    public float leftTrigger, rightTrigger;
-
-    //    public XInputController()
-    //    {
-    //        controller = new Controller(UserIndex.One);
-    //        connected = controller.IsConnected;
-    //    }
-
-    //    // Call this method to update all class values
-    //    public void Update()
-    //    {
-    //        if (!connected)
-    //            return;
-
-    //        gamepad = controller.GetState().Gamepad;
-
-    //        leftThumb.X = (int)((Math.Abs((float)gamepad.LeftThumbX) < deadband) ? 0 : (float)gamepad.LeftThumbX / short.MinValue * -100);
-    //        leftThumb.Y = (int)((Math.Abs((float)gamepad.LeftThumbY) < deadband) ? 0 : (float)gamepad.LeftThumbY / short.MaxValue * 100);
-    //        rightThumb.Y = (int)((Math.Abs((float)gamepad.RightThumbX) < deadband) ? 0 : (float)gamepad.RightThumbX / short.MaxValue * 100);
-    //        rightThumb.X = (int)((Math.Abs((float)gamepad.RightThumbY) < deadband) ? 0 : (float)gamepad.RightThumbY / short.MaxValue * 100);
-
-    //        leftTrigger = gamepad.LeftTrigger;
-    //        rightTrigger = gamepad.RightTrigger;
-    //    }
-    //}
-
-
-
 }

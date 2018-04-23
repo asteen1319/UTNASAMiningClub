@@ -92,6 +92,14 @@
     <None Include="Resources\audie cowboy.png" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Resources\stop.png" />
+    <None Include="Resources\right.png" />
+    <None Include="Resources\reverse.png" />
+    <None Include="Resources\left.png" />
+    <None Include="Resources\forward.png" />
+    <None Include="Resources\clockwise.png" />
+    <None Include="Resources\counterclockwise.png" />
+    <None Include="Resources\black stop.png" />
     <Content Include="Resources\favicon.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
